@@ -45,7 +45,7 @@ from llava.train.llava_trainer import LLaVATrainer
 from llava import conversation as conversation_lib
 from llava.model import *
 from llava.mm_utils import process_highres_image, process_anyres_image, process_highres_image_crop_split, tokenizer_image_token
-from llava.utils import rank0_print, process_video_with_pyav, process_video_with_decord
+from llava.utils import rank0_print, process_video_with_pyav, process_video_with_decord, process_video_with_sens
 
 torch.multiprocessing.set_sharing_strategy("file_system")
 
@@ -382,9 +382,7 @@ def preprocess_multimodal(sources: Sequence[str], data_args: DataArguments) -> D
 
     for source in sources:
         for sentence in source:
-            # TODO maybe this should be changed for interleaved data?
-            # if DEFAULT_IMAGE_TOKEN in sentence["value"] and not sentence["value"].startswith(DEFAULT_IMAGE_TOKEN):
-            # only check for num_im=1
+            # 处理图像标记
             num_im = len(re.findall(DEFAULT_IMAGE_TOKEN, sentence["value"]))
             if num_im == 1 and DEFAULT_IMAGE_TOKEN in sentence["value"] and not sentence["value"].startswith(DEFAULT_IMAGE_TOKEN):
                 sentence["value"] = sentence["value"].replace(DEFAULT_IMAGE_TOKEN, "").strip()
@@ -392,12 +390,32 @@ def preprocess_multimodal(sources: Sequence[str], data_args: DataArguments) -> D
                 sentence["value"] = sentence["value"].strip()
                 if "mmtag" in conversation_lib.default_conversation.version:
                     sentence["value"] = sentence["value"].replace(DEFAULT_IMAGE_TOKEN, "<Image>" + DEFAULT_IMAGE_TOKEN + "</Image>")
+            
+            # 处理视频标记（如果有）
+            video_token = "<video>"
+            if video_token in sentence["value"]:
+                # 确保视频标记格式正确
+                if not sentence["value"].startswith(video_token):
+                    sentence["value"] = sentence["value"].replace(video_token, "").strip()
+                    sentence["value"] = video_token + "\n" + sentence["value"]
+                    sentence["value"] = sentence["value"].strip()
+                if "mmtag" in conversation_lib.default_conversation.version:
+                    sentence["value"] = sentence["value"].replace(video_token, "<Video>" + video_token + "</Video>")
+            
+            # 替换标记
             replace_token = DEFAULT_IMAGE_TOKEN
             if data_args.mm_use_im_start_end:
                 replace_token = DEFAULT_IM_START_TOKEN + replace_token + DEFAULT_IM_END_TOKEN
             sentence["value"] = sentence["value"].replace(DEFAULT_IMAGE_TOKEN, replace_token)
+            
+            # 同样处理视频标记
+            if video_token in sentence["value"]:
+                replace_video_token = video_token
+                if data_args.mm_use_im_start_end:
+                    replace_video_token = DEFAULT_IM_START_TOKEN + replace_video_token + DEFAULT_IM_END_TOKEN
+                sentence["value"] = sentence["value"].replace(video_token, replace_video_token)
 
-            # For videoInstruct-100k noisy_data. TODO: Ask Yuanhan to clean the data instead of leaving the noise code here.
+            # 清理其他可能的噪声
             sentence["value"] = sentence["value"].replace("QA_GT_caption_based_noisy", "")
 
     return sources
@@ -1137,20 +1155,27 @@ class LazySupervisedDataset(Dataset):
             sources = [sources]
         assert len(sources) == 1, "Don't know why it is wrapped to a list"  # FIXME
 
+        # 创建一个列表来存储所有媒体（图像和视频）
+        media_list = []
+        has_media = False
+
+        # 处理图像
         if "image" in sources[0]:
             image_file = self.list_data_dict[i]["image"]
             if type(image_file) is list:
                 image = [self.process_image(f) for f in image_file]
-                # Handling multi images
-                # overwrite to process with simple pad 
+                # 处理多图像
                 if len(image_file) > 1:
                     image = [self.process_image(f, "pad") for f in image_file]
                     image = [[im[0], im[1], "image"] for im in image]
             else:
                 image = [self.process_image(image_file)]
-            sources = preprocess_multimodal(copy.deepcopy([e["conversations"] for e in sources]), self.data_args)
+            
+            media_list.extend(image)
+            has_media = True
 
-        elif "video" in sources[0]:
+        # 处理视频
+        if "video" in sources[0]:
             video_file = self.list_data_dict[i]["video"]
             video_folder = self.data_args.video_folder
             video_file = os.path.join(video_folder, video_file)
@@ -1190,6 +1215,8 @@ class LazySupervisedDataset(Dataset):
                                 video.append(frame)
                         except IOError:
                             print(f"Failed to read frame at path: {frame_path}")
+                elif suffix.lower() == "sens": # 处理 .sens 文件
+                    video, video_time, frame_time, num_frames_to_sample = process_video_with_sens(video_file, self.data_args)
                 else:
                     video, video_time, frame_time, num_frames_to_sample = process_video_with_decord(video_file, self.data_args)
 
@@ -1198,18 +1225,17 @@ class LazySupervisedDataset(Dataset):
                 if self.data_args.add_time_instruction:
                     time_instruciton = f"The video lasts for {video_time:.2f} seconds, and {num_frames_to_sample} frames are uniformly sampled from it. These frames are located at {frame_time}.Please answer the following questions related to this video."
                     sources[0]["conversations"][0]["value"] = f'{DEFAULT_IMAGE_TOKEN}\n{time_instruciton}\n{sources[0]["conversations"][0]["value"].replace(DEFAULT_IMAGE_TOKEN, "")}'
-                image = [(image, video[0].size, "video")]
-                sources = preprocess_multimodal(copy.deepcopy([e["conversations"] for e in sources]), self.data_args)
-                # print(sources)
+                
+                media_list.append((image, video[0].size, "video"))
+                has_media = True
             except Exception as e:
                 print(f"Error: {e}")
                 print(f"Failed to read video file: {video_file}")
                 return self._get_item(i + 1)
-        else:
-            sources = copy.deepcopy([e["conversations"] for e in sources])
-
-        has_image = ("image" in self.list_data_dict[i]) or ("video" in self.list_data_dict[i])
-        data_dict = preprocess(sources, self.tokenizer, has_image=has_image)
+        
+        # 预处理对话
+        sources = preprocess_multimodal(copy.deepcopy([e["conversations"] for e in sources]), self.data_args)
+        data_dict = preprocess(sources, self.tokenizer, has_image=has_media)
 
         if "prompt" in data_dict:
             prompt = data_dict["prompt"]
@@ -1219,18 +1245,17 @@ class LazySupervisedDataset(Dataset):
         if isinstance(i, int):
             data_dict = dict(input_ids=data_dict["input_ids"][0], labels=data_dict["labels"][0])
 
-        # image exist in the data
-        if "image" in self.list_data_dict[i]:
-            data_dict["image"] = image
-        elif "video" in self.list_data_dict[i]:
-            data_dict["image"] = image
+        # 将所有媒体添加到数据字典中
+        if media_list:
+            data_dict["image"] = media_list
         elif self.data_args.is_multimodal:
-            # image does not exist in the data, but the model is multimodal
+            # 如果数据中没有媒体，但模型是多模态的
             crop_size = self.data_args.image_processor.crop_size
             data_dict["image"] = [
                 (torch.zeros(1, 3, crop_size["height"], crop_size["width"]), (crop_size["width"], crop_size["height"]), "text"),
             ]
-        # prompt exist in the data
+        
+        # 如果存在提示，添加到数据字典中
         if prompt is not None:
             data_dict["prompt"] = prompt
 
