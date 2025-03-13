@@ -197,168 +197,149 @@ def pretty_print_semaphore(semaphore):
         return "None"
     return f"Semaphore(value={semaphore._value}, locked={semaphore.locked()})"
 
-
-
 import os
 import numpy as np
 from PIL import Image
 import struct
 import zlib
 import io
+import traceback
+import imageio
 
+COMPRESSION_TYPE_COLOR = {-1:'unknown', 0:'raw', 1:'png', 2:'jpeg'}
+COMPRESSION_TYPE_DEPTH = {-1:'unknown', 0:'raw_ushort', 1:'zlib_ushort', 2:'occi_ushort'}
+
+class RGBDFrame():
+  def load(self, file_handle):
+        file_handle.seek(16 * 4, 1)
+        file_handle.seek(8, 1)
+        file_handle.seek(8, 1)
+        self.color_size_bytes = struct.unpack('Q', file_handle.read(8))[0]
+        self.depth_size_bytes = struct.unpack('Q', file_handle.read(8))[0]
+        self.color_data = file_handle.read(self.color_size_bytes)
+        file_handle.seek(self.depth_size_bytes, 1)
+
+  def decompress_color(self, compression_type):
+    if compression_type == 'jpeg':
+       return self.decompress_color_jpeg()
+    else:
+       raise
+
+
+  def decompress_color_jpeg(self):
+    return imageio.imread(self.color_data)
+  
 class SensReader:
-    """简化版 ScanNet .sens 文件读取器，专注于快速提取 RGB 帧"""
-    
+
     def __init__(self, filename):
-        """初始化 SensReader
-        
-        参数:
-            filename: .sens 文件路径
-        """
-        self._file = open(filename, 'rb')
-        self._file.read(4)
-        
-        strlen = struct.unpack('Q', self._file.read(8))[0]
-        self._file.read(strlen)
-        
-        self._file.read(16*4*4)
-        self._file.read(8)
-        
-        self.color_width = struct.unpack('I', self._file.read(4))[0]
-        self.color_height = struct.unpack('I', self._file.read(4))[0]
-        
-        self._file.read(8 + 4)
-
-        self.num_frames = struct.unpack('Q', self._file.read(8))[0]
-        
-        self._frame_indices = []
-        
-
-        for _ in range(self.num_frames):
-            self._file.seek(16*4, 1)
-            timestamp_color = struct.unpack('Q', self._file.read(8))[0]
-            self._file.read(16)
-            color_size_bytes = struct.unpack('Q', self._file.read(8))[0]
-            depth_size_bytes = struct.unpack('Q', self._file.read(8))[0]
-            
-            current_pos = self._file.tell()
-            self._frame_indices.append((current_pos, color_size_bytes))
-            self._timestamps.append(timestamp_color)
-            
-            self._file.seek(color_size_bytes + depth_size_bytes, 1)
-    
-    def get_rgb_frame(self, frame_idx):
-        """获取指定索引的 RGB 帧
-        
-        参数:
-            frame_idx: 帧索引
-            
-        返回:
-            PIL.Image: RGB 图像
-        """
-        if frame_idx < 0 or frame_idx >= self.num_frames:
-            raise IndexError(f"帧索引超出范围: {frame_idx}, 总帧数: {self.num_frames}")
-        
-        pos, color_size = self._frame_indices[frame_idx]
-        self._file.seek(pos)
-        
-        color_data = self._file.read(color_size)
-        
         try:
-            color_image = Image.open(io.BytesIO(color_data))
-            return color_image
-        except:
-            try:
-                color_array = np.frombuffer(color_data, dtype=np.uint8).reshape(self.color_height, self.color_width, 3)
-                color_image = Image.fromarray(color_array)
-                return color_image
-            except:
-                print(f"无法解析帧 {frame_idx} 的颜色数据")
-                return Image.new('RGB', (self.color_width, self.color_height), (0, 0, 0))
-    
-    def get_timestamp(self, frame_idx):
-        """获取指定索引帧的时间戳
-        
-        参数:
-            frame_idx: 帧索引
+            self._file = open(filename, 'rb')
+            file_size = os.path.getsize(filename)
             
-        返回:
-            int: 时间戳（微秒）
-        """
-        if frame_idx < 0 or frame_idx >= self.num_frames:
-            raise IndexError(f"帧索引超出范围: {frame_idx}, 总帧数: {self.num_frames}")
+            version_data = self._file.read(4)
+            version = struct.unpack('I', version_data)[0]
+            
+            strlen_data = self._file.read(8)
+            strlen = struct.unpack('Q', strlen_data)[0]
+            
+            self._file.read(strlen)
+           
+            camera_params_size = 16*4*4
+            self._file.read(camera_params_size)
+          
+            self.color_compression_type = COMPRESSION_TYPE_COLOR[struct.unpack('i', self._file.read(4))[0]]
+            self.depth_compression_type = COMPRESSION_TYPE_DEPTH[struct.unpack('i', self._file.read(4))[0]]
         
-        return self._timestamps[frame_idx]
-    
-    def get_video_duration(self):
-        """计算视频总时长
+            width_data = self._file.read(4)
+            self.color_width = struct.unpack('I', width_data)[0]
+            
+            height_data = self._file.read(4)
+            self.color_height = struct.unpack('I', height_data)[0]
+            
+            depth_size_data = self._file.read(8 + 4)
+      
+            num_frames_data = self._file.read(8)
+            self.num_frames = struct.unpack('Q', num_frames_data)[0]
+            
+            self.frames = []
+            for i in range(self.num_frames):
+                frame = RGBDFrame()
+                frame.load(self._file)
+                self.frames.append(frame)
+            
+        except Exception as e:
+            print(f"error when init SensReader: {e}")
+            traceback.print_exc()
+            if hasattr(self, '_file') and self._file:
+                self._file.close()
+            raise
+
+
+    def get_batch(self, frame_indices):
+        frames = []
+        for idx in frame_indices:
+            if idx < 0 or idx >= len(self.frames):
+                raise IndexError(f"frame index out of range: {idx}, total frames: {len(self.frames)}")
+            
+            frame = self.frames[idx]
+            
+            try:
+                color_array = frame.decompress_color(self.color_compression_type)
+                frames.append(color_array)
+            except Exception as e:
+                print(f"error when decompress frame {idx}: {e}")
+                empty_frame = np.zeros((self.color_height, self.color_width, 3), dtype=np.uint8)
+                frames.append(empty_frame)
         
-        返回:
-            float: 视频总时长（秒）
-        """
-        if self.num_frames <= 1:
-            return 0.0
+        if frames:
+            return np.stack(frames, axis=0)
+        else:
+            return np.zeros((0, self.color_height, self.color_width, 3), dtype=np.uint8)
         
-        first_timestamp = self._timestamps[0]
-        last_timestamp = self._timestamps[-1]
-        duration_us = last_timestamp - first_timestamp
-        duration_s = duration_us / 1000000.0
-        
-        if duration_s <= 0:
-            return self.num_frames / 30.0
-        
-        return duration_s
-    
     def __del__(self):
-        """关闭文件"""
         if hasattr(self, '_file') and self._file:
             self._file.close()
 
 
 def process_video_with_sens(sens_file, data_args):
-    """
-    快速处理 ScanNet 的 .sens 文件，提取 RGB 帧序列
-    
-    参数:
-        sens_file: .sens 文件路径
-        data_args: 数据参数，包含 video_fps 和 frames_upbound
-        
-    返回:
-        video: 帧列表，每个元素是 PIL.Image
-        video_time: 视频总时长（秒）
-        frame_time: 每一帧的时间戳字符串
-        num_frames_to_sample: 采样的帧数
-    """
     try:
+        video_fps = data_args.video_fps
+        if not os.path.exists(sens_file):
+            raise FileNotFoundError(f"file not found: {sens_file}")
+        
+        file_size = os.path.getsize(sens_file)
+        
         reader = SensReader(sens_file)
         total_frame_num = reader.num_frames
         
-        video_time = reader.get_video_duration()
-        original_fps = total_frame_num / video_time if video_time > 0 else 30.0
+        if total_frame_num == 0:
+            raise ValueError("no frames found")
+        
+        video_time = reader.num_frames / video_fps
+        
+        avg_fps = data_args.video_fps
+        avg_fps = round(avg_fps)
+        frame_idx = list(range(0, total_frame_num, avg_fps))
+        frame_time = [i/avg_fps for i in frame_idx]
+        
+        if hasattr(data_args, 'frames_upbound') and data_args.frames_upbound > 0:
+            force_sample = getattr(data_args, 'force_sample', False)
+            if len(frame_idx) > data_args.frames_upbound or force_sample:
+                uniform_sampled_frames = np.linspace(0, total_frame_num - 1, data_args.frames_upbound, dtype=int)
+                frame_idx = uniform_sampled_frames.tolist()
+                frame_time = [i/video_fps for i in frame_idx]
 
-        if data_args.frames_upbound > 0:
-            num_frames_to_sample = min(data_args.frames_upbound, total_frame_num)
-            frame_indices = np.linspace(0, total_frame_num - 1, num_frames_to_sample, dtype=int)
-        else:
-            sample_interval = max(1, round(original_fps / (data_args.video_fps or 1.0)))
-            frame_indices = np.arange(0, total_frame_num, sample_interval)
-            num_frames_to_sample = len(frame_indices)
+        video = reader.get_batch(frame_idx)
         
-        frames = []
-        frame_times = []
+        frame_time_str = ",".join([f"{i:.2f}s" for i in frame_time])
         
-        first_timestamp = reader.get_timestamp(0) / 1000000.0  
+        num_frames_to_sample = len(frame_idx)
         
-        for idx in frame_indices:
-            frames.append(reader.get_rgb_frame(int(idx)))
-            timestamp = reader.get_timestamp(int(idx)) / 1000000.0
-            relative_time = timestamp - first_timestamp
-            frame_times.append(relative_time)
-        
-        frame_time_str = ",".join([f"{t:.2f}s" for t in frame_times])
+        frames = [Image.fromarray(video[i]) for i in range(video.shape[0])]
         
         return frames, video_time, frame_time_str, num_frames_to_sample
     
     except Exception as e:
-        print(f"处理 .sens 文件时出错: {e}")
+        print(f"error when process .sens file: {e}")
+        traceback.print_exc()
         return [], 0.0, "", 0
