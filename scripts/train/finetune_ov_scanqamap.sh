@@ -4,16 +4,17 @@ export NCCL_IB_GID_INDEX=3
 export NCCL_SOCKET_IFNAME=eth0
 export NCCL_DEBUG=INFO
 
-export NUM_GPUS=1 # <<<<<<< 每个节点上的GPU数量
+export NUM_GPUS=3 # <<<<<<< 每个节点上的GPU数量
 export NNODES=1 # <<<<<<< 分布式训练中节点的数量
 export RANK=0 # <<<<<<< 当前节点在分布式训练中的排名
-export ADDR=127.0.0.1 # <<<<<<< 分布式训练中master node的IP地址
-export PORT=29500 # <<<<<<< 节点间通信的网络端口
+export ADDR="localhost" # <<<<<<< 分布式训练中master node的IP地址
+export PORT="29500" # <<<<<<< 节点间通信的网络端口
+export CUDA_VISIBLE_DEVICES="1,2,3"
 
-LLM_VERSION="Qwen/Qwen2-7B-Instruct" 
+# LLM_VERSION="Qwen/Qwen2-7B-Instruct" 
 # for 7b model we recommend bs=1, accum=2, 16 nodes, 128 gpus, lr=1e-5, warmup=0.03
 # for 72b model we recommend bs=1, accum=1, 32 nodes, 256 gpus, lr=1e-5, warmup=0.03
-LLM_VERSION_CLEAN="${LLM_VERSION//\//_}"
+# LLM_VERSION_CLEAN="${LLM_VERSION//\//_}"
 VISION_MODEL_VERSION="google/siglip-so400m-patch14-384"
 VISION_MODEL_VERSION_CLEAN="${VISION_MODEL_VERSION//\//_}"
 
@@ -26,11 +27,11 @@ VISION_MODEL_VERSION_CLEAN="${VISION_MODEL_VERSION//\//_}"
 
 # Stage 2
 PROMPT_VERSION="qwen_1_5"
-RUN_NAME="llava-onevision-${VISION_MODEL_VERSION_CLEAN}-${LLM_VERSION_CLEAN}-ov_stage_am9" 
-MODEL_CHECKPOINT="lmms-lab/llava-onevision-qwen2-7b-ov"
-DATASET_PATH="/home/renyy/projects/VideoX_wyq/scanqa_map_data.yaml" # <<<<<<< dataset yaml
-IMAGE_FOLDER="/mnt/gaia/datasets/project_data/ScanQA_map/data_processed/map_output/bev" # <<<<<<< image folder
-VIDEO_FOLDER="/mnt/gaia/datasets/project_data/ScanNet/scans/"  # <<<<<<< video folder
+RUN_NAME="llava-onevision-${VISION_MODEL_VERSION_CLEAN}-ov_stage" 
+MODEL_CHECKPOINT="lmms-lab/llava-onevision-qwen2-0.5b-ov"
+DATASET_PATH="/sda/renyy/data/ScanQA_map/scanqa_map_data.yaml" # <<<<<<< dataset yaml
+IMAGE_FOLDER="/sda/renyy/data/ScanQA_map/bev" # <<<<<<< image folder
+VIDEO_FOLDER="/sda/renyy/data/ScanNet/scans/"  # <<<<<<< video folder
 MM_TUNABLE_PARTS="mm_vision_tower,mm_mlp_adapter,mm_language_model" # >>>>> TODO: to training
 LR=1e-5 # >>>>> TODO: to tuning, 1e-5 for 7b
 VIDEO_FPS=30 # <<<<<< video fps for ScanNet
