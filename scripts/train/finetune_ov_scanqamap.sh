@@ -1,15 +1,17 @@
 export OMP_NUM_THREADS=8
-export NCCL_IB_DISABLE=0
+export NCCL_IB_DISABLE=1
+export NCCL_P2P_DISABLE=1
 export NCCL_IB_GID_INDEX=3
-export NCCL_SOCKET_IFNAME=eth0
+export NCCL_SOCKET_IFNAME=eno1
+export NCCL_DEBUG=INFO
 export NCCL_DEBUG=INFO
 
-export NUM_GPUS=3 # <<<<<<< 每个节点上的GPU数量
+export NUM_GPUS=2 # <<<<<<< 每个节点上的GPU数量
 export NNODES=1 # <<<<<<< 分布式训练中节点的数量
 export RANK=0 # <<<<<<< 当前节点在分布式训练中的排名
 export ADDR="localhost" # <<<<<<< 分布式训练中master node的IP地址
 export PORT="29500" # <<<<<<< 节点间通信的网络端口
-export CUDA_VISIBLE_DEVICES="1,2,3"
+export CUDA_VISIBLE_DEVICES="5,6"
 
 # LLM_VERSION="Qwen/Qwen2-7B-Instruct" 
 # for 7b model we recommend bs=1, accum=2, 16 nodes, 128 gpus, lr=1e-5, warmup=0.03
@@ -30,9 +32,10 @@ PROMPT_VERSION="qwen_1_5"
 RUN_NAME="llava-onevision-${VISION_MODEL_VERSION_CLEAN}-ov_stage" 
 MODEL_CHECKPOINT="lmms-lab/llava-onevision-qwen2-0.5b-ov"
 DATASET_PATH="/sda/renyy/data/ScanQA_map/scanqa_map_data.yaml" # <<<<<<< dataset yaml
-IMAGE_FOLDER="/sda/renyy/data/ScanQA_map/bev" # <<<<<<< image folder
+IMAGE_FOLDER="/sda/renyy/data/ScanQA_map/bev/bev" # <<<<<<< image folder
 VIDEO_FOLDER="/sda/renyy/data/ScanNet/scans/"  # <<<<<<< video folder
 MM_TUNABLE_PARTS="mm_vision_tower,mm_mlp_adapter,mm_language_model" # >>>>> TODO: to training
+OUTPUT_DIR="/sda/renyy/llava-ov/videox-checkpoints/${RUN_NAME}"
 LR=1e-5 # >>>>> TODO: to tuning, 1e-5 for 7b
 VIDEO_FPS=30 # <<<<<< video fps for ScanNet
 
@@ -60,7 +63,7 @@ ACCELERATE_CPU_AFFINITY=1 torchrun --nproc_per_node="${NUM_GPUS}" --nnodes="${NN
     --mm_patch_merge_type spatial_unpad \
     --bf16 True \
     --run_name $RUN_NAME \
-    --output_dir /mnt/bn/vl-research/checkpoints/onevision/$RUN_NAME \
+    --output_dir $OUTPUT_DIR \
     --num_train_epochs 1 \
     --per_device_train_batch_size 1 \
     --per_device_eval_batch_size 4 \
