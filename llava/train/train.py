@@ -118,6 +118,10 @@ class ModelArguments:
 @dataclass
 class DataArguments:
     data_path: str = field(default=None, metadata={"help": "Path to the training data, in llava's instruction.json format. Supporting multiple json files via /path/to/{a,b,c}.json"})
+    validation_file: Optional[str] = field(
+        default=None, 
+        metadata={"help": "Path to the validation data"}
+    )
     lazy_preprocess: bool = False
     is_multimodal: bool = False
     early_mix_text: bool = False
@@ -1315,7 +1319,20 @@ def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer, dat
     """Make dataset and collator for supervised fine-tuning."""
     train_dataset = LazySupervisedDataset(tokenizer=tokenizer, data_path=data_args.data_path, data_args=data_args)
     data_collator = DataCollatorForSupervisedDataset(tokenizer=tokenizer)
-    return dict(train_dataset=train_dataset, eval_dataset=None, data_collator=data_collator)
+    eval_dataset = None
+    if data_args.validation_file:
+        eval_dataset = LazySupervisedDataset(
+            tokenizer=tokenizer,
+            data_path=data_args.validation_file,
+            data_args=data_args
+        )
+    
+    data_collator = DataCollatorForSupervisedDataset(tokenizer=tokenizer)
+    return dict(
+        train_dataset=train_dataset,
+        eval_dataset=eval_dataset,
+        data_collator=data_collator
+    )
 
 
 def get_model(model_args, training_args, bnb_model_from_pretrained_args):

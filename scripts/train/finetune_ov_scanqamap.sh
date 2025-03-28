@@ -13,6 +13,8 @@ export ADDR="localhost" # <<<<<<< 分布式训练中master node的IP地址
 export PORT="29500" # <<<<<<< 节点间通信的网络端口
 export CUDA_VISIBLE_DEVICES="5,6"
 
+export WANDB_PROJECT="llava-ov-scanqamap"
+
 # LLM_VERSION="Qwen/Qwen2-7B-Instruct" 
 # for 7b model we recommend bs=1, accum=2, 16 nodes, 128 gpus, lr=1e-5, warmup=0.03
 # for 72b model we recommend bs=1, accum=1, 32 nodes, 256 gpus, lr=1e-5, warmup=0.03
@@ -32,12 +34,14 @@ PROMPT_VERSION="qwen_1_5"
 RUN_NAME="llava-onevision-${VISION_MODEL_VERSION_CLEAN}-ov_stage" 
 MODEL_CHECKPOINT="lmms-lab/llava-onevision-qwen2-0.5b-ov"
 DATASET_PATH="/sda/renyy/data/ScanQA_map/scanqa_map_data.yaml" # <<<<<<< dataset yaml
+DATASET_VAL_PATH="/sda/renyy/data/ScanQA_map/scanqa_map_val_data.yaml" # <<<<<<< validation dataset
 IMAGE_FOLDER="/sda/renyy/data/ScanQA_map/bev/bev" # <<<<<<< image folder
 VIDEO_FOLDER="/sda/renyy/data/ScanNet/scans/"  # <<<<<<< video folder
 MM_TUNABLE_PARTS="mm_vision_tower,mm_mlp_adapter,mm_language_model" # >>>>> TODO: to training
-OUTPUT_DIR="/sda/renyy/llava-ov/videox-checkpoints/${RUN_NAME}"
-LR=1e-5 # >>>>> TODO: to tuning, 1e-5 for 7b
+OUTPUT_DIR="/sda/renyy/llava-ov/videox-checkpoints/${RUN_NAME}" # ======= edit =======
+LR=1e-5 # ======= edit =======
 VIDEO_FPS=30 # <<<<<< video fps for ScanNet
+EPOCH=3 # ======= edit =======
 
 echo "MODEL_CHECKPOINT: ${MODEL_CHECKPOINT}"
 echo "MID_RUN_NAME: ${RUN_NAME}"
@@ -64,11 +68,13 @@ ACCELERATE_CPU_AFFINITY=1 torchrun --nproc_per_node="${NUM_GPUS}" --nnodes="${NN
     --bf16 True \
     --run_name $RUN_NAME \
     --output_dir $OUTPUT_DIR \
-    --num_train_epochs 1 \
+    --num_train_epochs $EPOCH \
     --per_device_train_batch_size 1 \
     --per_device_eval_batch_size 4 \
     --gradient_accumulation_steps 2 \
-    --evaluation_strategy "no" \
+    --evaluation_strategy "steps" \
+    --eval_steps 10 \
+    --validation_file $DATASET_VAL_PATH \
     --save_strategy "steps" \
     --save_steps 1000 \
     --save_total_limit 1 \
