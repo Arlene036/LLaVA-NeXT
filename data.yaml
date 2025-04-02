@@ -1,0 +1,6 @@
+
+nano /sda/renyy/data/ScanQA_map/scanqa_map_val_data.yaml
+
+datasets:
+  - json_path: /sda/renyy/data/ScanQA_map/scanqa_map_small_val.json
+    sampling_strategy: all
