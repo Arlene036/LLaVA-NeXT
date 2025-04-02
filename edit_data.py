@@ -53,9 +53,9 @@ def main():
     random.seed(42)
     
     # 输入和输出文件路径
-    input_file = 'scanqa_map_small.json'
-    train_output_file = 'scanqa_map_small_train.json'
-    val_output_file = 'scanqa_map_small_val.json'
+    input_file = 'scanqa_map.json'
+    train_output_file = 'scanqa_map_train.json'
+    val_output_file = 'scanqa_map_val.json'
     
     # 读取数据
     data = load_json(input_file)
