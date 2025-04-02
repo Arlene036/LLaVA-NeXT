@@ -146,6 +146,7 @@ class TrainingArguments(transformers.TrainingArguments):
     freeze_mm_mlp_adapter: bool = field(default=False)
     freeze_mm_vision_resampler: bool = field(default=False)
     mpt_attn_impl: Optional[str] = field(default="triton")
+    per_device_eval_batch_size: int = field(default=4)
     model_max_length: int = field(
         default=4096,
         metadata={"help": "Maximum sequence length. Sequences will be right padded (and possibly truncated)."},
