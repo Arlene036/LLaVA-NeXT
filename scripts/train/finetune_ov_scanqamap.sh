@@ -5,13 +5,15 @@ export NCCL_IB_GID_INDEX=3
 export NCCL_SOCKET_IFNAME=eno1
 export NCCL_DEBUG=INFO
 export NCCL_DEBUG=INFO
+export HF_DATASETS_OFFLINE=1
+export TRANSFORMERS_OFFLINE=1
 
-export NUM_GPUS=2 # <<<<<<< 每个节点上的GPU数量
+export NUM_GPUS=4 # <<<<<<< 每个节点上的GPU数量
 export NNODES=1 # <<<<<<< 分布式训练中节点的数量
 export RANK=0 # <<<<<<< 当前节点在分布式训练中的排名
 export ADDR="localhost" # <<<<<<< 分布式训练中master node的IP地址
 export PORT="29500" # <<<<<<< 节点间通信的网络端口
-export CUDA_VISIBLE_DEVICES="5,6"
+export CUDA_VISIBLE_DEVICES="3,4,5,7"
 
 export WANDB_PROJECT="llava-ov-scanqamap"
 
@@ -19,7 +21,9 @@ export WANDB_PROJECT="llava-ov-scanqamap"
 # for 7b model we recommend bs=1, accum=2, 16 nodes, 128 gpus, lr=1e-5, warmup=0.03
 # for 72b model we recommend bs=1, accum=1, 32 nodes, 256 gpus, lr=1e-5, warmup=0.03
 # LLM_VERSION_CLEAN="${LLM_VERSION//\//_}"
-VISION_MODEL_VERSION="google/siglip-so400m-patch14-384"
+#"google/siglip-so400m-patch14-384"
+VISION_MODEL_VERSION="/home/renyy/.cache/huggingface/hub/models--google--siglip-so400m-patch14-384"
+
 VISION_MODEL_VERSION_CLEAN="${VISION_MODEL_VERSION//\//_}"
 
 # ############### Pretrain ################
@@ -32,7 +36,7 @@ VISION_MODEL_VERSION_CLEAN="${VISION_MODEL_VERSION//\//_}"
 # Stage 2
 PROMPT_VERSION="qwen_1_5"
 RUN_NAME="llava-onevision-${VISION_MODEL_VERSION_CLEAN}-ov_stage" 
-MODEL_CHECKPOINT="lmms-lab/llava-onevision-qwen2-0.5b-ov"
+MODEL_CHECKPOINT="/sda/renyy/LLM_MODEL/llava-onevision-qwen2-7b-ov" #/sda/renyy/LLM_MODEL/llava-onevision-qwen2-7b-ov
 DATASET_PATH="/sda/renyy/data/ScanQA_map/scanqa_map_data.yaml" # <<<<<<< dataset yaml
 DATASET_VAL_PATH="/sda/renyy/data/ScanQA_map/scanqa_map_val_data.yaml" # <<<<<<< validation dataset
 IMAGE_FOLDER="/sda/renyy/data/ScanQA_map/bev/bev" # <<<<<<< image folder
@@ -75,6 +79,7 @@ ACCELERATE_CPU_AFFINITY=1 torchrun --nproc_per_node="${NUM_GPUS}" --nnodes="${NN
     --evaluation_strategy "steps" \
     --eval_steps 10 \
     --validation_file $DATASET_VAL_PATH \
+    --per_device_eval_batch_size 1 \
     --save_strategy "steps" \
     --save_steps 1000 \
     --save_total_limit 1 \
